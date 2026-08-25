@@ -1,2 +1,3 @@
-# Can-AI-make-Minecraft-from-Scratch-
-WIP, used Claude and ChatGPT.
+# Can AI make Minecraft from Scratch?
+WIP, using Claude and ChatGPT.
+
