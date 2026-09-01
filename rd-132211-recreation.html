@@ -1,0 +1,839 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>rd-132211 — prototype recreation</title>
+<style>
+  :root{
+    --ink:#14170f;
+    --ink-2:#1c2015;
+    --grass:#5b8a3a;
+    --grass-deep:#3d5f27;
+    --grass-bright:#8fbf5a;
+    --stone:#9a9a92;
+    --sky:#7ec1e0;
+    --parchment:#d9d2b8;
+    --warn:#e0a050;
+    --mono: ui-monospace, 'SF Mono', 'Cascadia Code', Consolas, 'Liberation Mono', monospace;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;width:100%;height:100%;overflow:hidden;background:#000;font-family:var(--mono);}
+  #game-container{position:fixed;inset:0;}
+  #game-canvas{position:absolute;inset:0;display:block;outline:none;}
+
+  #crosshair{
+    position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);
+    width:16px;height:16px;pointer-events:none;display:none;z-index:10;
+  }
+  #crosshair::before,#crosshair::after{
+    content:'';position:absolute;background:rgba(255,255,255,0.92);
+  }
+  #crosshair::before{left:50%;top:0;width:2px;height:100%;margin-left:-1px;}
+  #crosshair::after{top:50%;left:0;height:2px;width:100%;margin-top:-1px;}
+
+  #hud{
+    position:absolute;left:12px;bottom:12px;z-index:10;
+    color:var(--parchment);font-size:11.5px;line-height:1.6;white-space:pre-line;
+    background:rgba(20,23,15,0.55);border:1px solid rgba(255,255,255,0.08);
+    padding:8px 10px;display:none;pointer-events:none;
+  }
+
+  #toast{
+    position:absolute;top:22px;left:50%;z-index:15;
+    transform:translateX(-50%) translateY(-8px);
+    background:var(--ink-2);border:1px solid var(--grass-deep);color:var(--grass-bright);
+    padding:8px 14px;font-size:12.5px;letter-spacing:0.3px;
+    opacity:0;transition:opacity 0.2s ease, transform 0.2s ease;pointer-events:none;
+  }
+  #toast.show{opacity:1;transform:translateX(-50%) translateY(0);}
+
+  #overlay{
+    position:absolute;inset:0;z-index:20;display:flex;align-items:center;justify-content:center;
+    background:radial-gradient(ellipse at center, rgba(30,40,20,0.5), rgba(4,6,3,0.88));
+    padding:20px;
+  }
+  .panel{
+    background:var(--ink-2);border:1px solid var(--grass-deep);
+    box-shadow:7px 7px 0 rgba(0,0,0,0.5);
+    max-width:440px;width:100%;color:var(--parchment);
+  }
+  .panel-body{padding:26px 28px 24px;}
+  .title{
+    font-size:32px;margin:0 0 10px;color:var(--grass-bright);letter-spacing:1px;font-weight:700;
+  }
+  .cursor{
+    display:inline-block;width:9px;height:26px;background:var(--grass-bright);
+    vertical-align:-4px;margin-left:3px;animation:blink 1s steps(1) infinite;
+  }
+  @media (prefers-reduced-motion: reduce){ .cursor{animation:none;opacity:1;} }
+  @keyframes blink{ 50%{opacity:0;} }
+  .subtitle{font-size:12.5px;color:var(--stone);line-height:1.55;margin:0 0 18px;}
+  .cmds{list-style:none;margin:0 0 14px;padding:0;font-size:13px;}
+  .cmds li{display:flex;gap:10px;padding:3px 0;align-items:baseline;}
+  .cmds .op{color:var(--grass-bright);}
+  .cmds .verb{color:var(--parchment);flex:1;}
+  .cmds .key{color:var(--sky);text-align:right;}
+  .warn-note{font-size:11.5px;color:var(--warn);line-height:1.55;margin:0 0 18px;}
+  .play-btn{
+    width:100%;background:var(--grass-deep);border:1px solid var(--grass-bright);
+    color:var(--parchment);font-family:var(--mono);font-size:14px;letter-spacing:0.4px;
+    padding:12px;cursor:pointer;
+  }
+  .play-btn:hover{background:var(--grass);color:var(--ink);}
+  .play-btn:focus-visible{outline:2px solid var(--sky);outline-offset:2px;}
+  .foot-row{display:flex;justify-content:space-between;align-items:center;margin-top:14px;font-size:11px;color:#6f6a58;}
+  .reset-link{
+    background:none;border:none;color:#8a8570;font-family:var(--mono);font-size:11px;
+    text-decoration:underline;cursor:pointer;padding:0;
+  }
+  .reset-link:focus-visible{outline:2px solid var(--sky);outline-offset:2px;}
+
+  #loading{
+    position:absolute;inset:0;z-index:50;display:flex;align-items:center;justify-content:center;
+    background:var(--ink);color:var(--grass-bright);font-size:13px;letter-spacing:0.5px;
+  }
+</style>
+</head>
+<body>
+<div id="game-container">
+  <div id="crosshair"></div>
+  <div id="hud"></div>
+  <div id="toast"></div>
+
+  <div id="overlay">
+    <div class="panel">
+      <div class="panel-body">
+        <h1 class="title">rd-132211<span class="cursor" aria-hidden="true"></span></h1>
+        <p class="subtitle">A from-scratch recreation of Minecraft's first public prototype, released in May 2009. Unofficial fan project, not affiliated with Mojang.</p>
+        <ul class="cmds">
+          <li><span class="op">&gt;</span><span class="verb">move</span><span class="key">w a s d</span></li>
+          <li><span class="op">&gt;</span><span class="verb">look</span><span class="key">mouse</span></li>
+          <li><span class="op">&gt;</span><span class="verb">jump</span><span class="key">space</span></li>
+          <li><span class="op">&gt;</span><span class="verb">place block</span><span class="key">left click</span></li>
+          <li><span class="op">&gt;</span><span class="verb">destroy block</span><span class="key">right click</span></li>
+          <li><span class="op">&gt;</span><span class="verb">save world</span><span class="key">enter</span></li>
+          <li><span class="op">&gt;</span><span class="verb">reset position</span><span class="key">hold r</span></li>
+        </ul>
+        <p class="warn-note">Click controls are reversed from modern Minecraft: left click places a block, right click destroys one.</p>
+        <button id="play-btn" class="play-btn">Click to play</button>
+        <div class="foot-row">
+          <span>unofficial fan project</span>
+          <button id="reset-btn" class="reset-link">reset world</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="loading">Loading…</div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+'use strict';
+
+/* ------------------------------------------------------------------
+   Safety net: if anything throws before our own try/catch is set up
+   (e.g. the three.js CDN fails to load), show a visible message
+   instead of a silent blank page.
+------------------------------------------------------------------- */
+window.addEventListener('error', function(e){
+  var loadingEl = document.getElementById('loading');
+  if(loadingEl){
+    loadingEl.style.display = 'flex';
+    loadingEl.textContent = 'A script error stopped the game: ' +
+      (e && e.message ? e.message : 'unknown error') + '. Reload to try again.';
+  }
+});
+
+/* ------------------------------------------------------------------
+   1. World constants + storage
+------------------------------------------------------------------- */
+var SIZE_X = 256, SIZE_Z = 256, SIZE_Y = 65; // 0 <= y <= 64
+var LAYER = SIZE_X * SIZE_Z;
+var GRASS_LEVEL = 43;
+var AIR = 0, COBBLESTONE = 1, GRASS = 2;
+
+var world = new Uint8Array(SIZE_X * SIZE_Y * SIZE_Z);
+
+function idx(x, y, z){ return y * LAYER + z * SIZE_X + x; }
+
+function getBlock(x, y, z){
+  if(x < 0 || x >= SIZE_X || z < 0 || z >= SIZE_Z || y < 0 || y >= SIZE_Y) return AIR;
+  return world[idx(x, y, z)];
+}
+
+function generateFreshWorld(){
+  world.fill(AIR);
+  world.fill(COBBLESTONE, 0, GRASS_LEVEL * LAYER);              // y 0..42
+  world.fill(GRASS, GRASS_LEVEL * LAYER, (GRASS_LEVEL + 1) * LAYER); // y 43
+  // y 44..64 stays air
+}
+
+function textureFor(type, dirName){
+  if(type === GRASS) return dirName === 'up' ? 'grassTop' : 'earth';
+  if(type === COBBLESTONE) return 'cobble';
+  return null;
+}
+
+/* ------------------------------------------------------------------
+   2. Directions & face geometry data
+   Matches the spec's convention exactly: north = z-1, south = z+1,
+   east = x+1, west = x-1, up = y+1, down = y-1.
+------------------------------------------------------------------- */
+var DIRS = [
+  {name:'up',    dx:0,  dy:1,  dz:0},
+  {name:'down',  dx:0,  dy:-1, dz:0},
+  {name:'north', dx:0,  dy:0,  dz:-1},
+  {name:'south', dx:0,  dy:0,  dz:1},
+  {name:'east',  dx:1,  dy:0,  dz:0},
+  {name:'west',  dx:-1, dy:0,  dz:0}
+];
+
+// 4 corners per face, wound so the normal points outward.
+var FACE_DATA = {
+  up:    {normal:[0,1,0],  corners:[[0,1,0],[0,1,1],[1,1,1],[1,1,0]]},
+  down:  {normal:[0,-1,0], corners:[[0,0,0],[1,0,0],[1,0,1],[0,0,1]]},
+  north: {normal:[0,0,-1], corners:[[0,0,0],[0,1,0],[1,1,0],[1,0,0]]},
+  south: {normal:[0,0,1],  corners:[[0,0,1],[1,0,1],[1,1,1],[0,1,1]]},
+  east:  {normal:[1,0,0],  corners:[[1,0,0],[1,1,0],[1,1,1],[1,0,1]]},
+  west:  {normal:[-1,0,0], corners:[[0,0,0],[0,0,1],[0,1,1],[0,1,0]]}
+};
+var FACE_UVS = [[0,0],[1,0],[1,1],[0,1]];
+
+var OVERLAY_TRANSFORM = {
+  up:    {rot:[-Math.PI/2, 0, 0], off:[0.5, 1, 0.5]},
+  down:  {rot:[ Math.PI/2, 0, 0], off:[0.5, 0, 0.5]},
+  north: {rot:[0, Math.PI, 0],    off:[0.5, 0.5, 0]},
+  south: {rot:[0, 0, 0],          off:[0.5, 0.5, 1]},
+  east:  {rot:[0, Math.PI/2, 0],  off:[1, 0.5, 0.5]},
+  west:  {rot:[0, -Math.PI/2, 0], off:[0, 0.5, 0.5]}
+};
+
+var GROUP_NAMES = ['grassTop', 'earth', 'cobble'];
+
+/* ------------------------------------------------------------------
+   3. Save / load — a simplified stand-in for the original's
+   GZip(raw block array) level.dat. We run-length encode the block
+   array (it compresses extremely well since most of the world is
+   uniform) and store it as base64 text via the artifact storage API.
+   This is NOT byte-compatible with real historical level.dat files.
+------------------------------------------------------------------- */
+function bytesToBase64(bytes){
+  var binary = '';
+  var chunk = 0x8000;
+  for(var i = 0; i < bytes.length; i += chunk){
+    binary += String.fromCharCode.apply(null, bytes.subarray(i, i + chunk));
+  }
+  return btoa(binary);
+}
+function base64ToBytes(b64){
+  var binary = atob(b64);
+  var bytes = new Uint8Array(binary.length);
+  for(var i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  return bytes;
+}
+function encodeRuns(arr){
+  var runs = [];
+  var i = 0;
+  var n = arr.length;
+  while(i < n){
+    var v = arr[i];
+    var j = i + 1;
+    while(j < n && arr[j] === v) j++;
+    runs.push(v, j - i);
+    i = j;
+  }
+  return runs;
+}
+function packRuns(runs){
+  var numRuns = runs.length / 2;
+  var buf = new Uint8Array(numRuns * 5);
+  var view = new DataView(buf.buffer);
+  for(var k = 0; k < numRuns; k++){
+    buf[k * 5] = runs[k * 2];
+    view.setUint32(k * 5 + 1, runs[k * 2 + 1], true);
+  }
+  return buf;
+}
+function unpackRunsToWorld(buf){
+  var view = new DataView(buf.buffer, buf.byteOffset, buf.byteLength);
+  var numRuns = Math.floor(buf.length / 5);
+  var out = new Uint8Array(SIZE_X * SIZE_Y * SIZE_Z);
+  var pos = 0;
+  for(var k = 0; k < numRuns; k++){
+    var v = buf[k * 5];
+    var len = view.getUint32(k * 5 + 1, true);
+    if(v !== 0) out.fill(v, pos, pos + len);
+    pos += len;
+  }
+  return out;
+}
+
+var saving = false;
+async function saveGame(){
+  if(!window.storage){ showToast('Saving unavailable here'); return; }
+  if(saving) return;
+  saving = true;
+  try{
+    var runs = encodeRuns(world);
+    var packed = packRuns(runs);
+    var b64 = bytesToBase64(packed);
+    var payload = JSON.stringify({
+      sx: SIZE_X, sy: SIZE_Y, sz: SIZE_Z, data: b64,
+      player: {x: player.x, y: player.y, z: player.z, yaw: player.yaw, pitch: player.pitch}
+    });
+    var result = await window.storage.set('level_dat', payload, false);
+    showToast(result ? 'World saved' : 'Save failed');
+  }catch(err){
+    console.error('Save error', err);
+    showToast('Save failed');
+  }finally{
+    saving = false;
+  }
+}
+
+async function tryLoadGame(){
+  if(!window.storage) return false;
+  try{
+    var res = await window.storage.get('level_dat', false);
+    if(!res || !res.value) return false;
+    var payload = JSON.parse(res.value);
+    if(!payload || payload.sx !== SIZE_X || payload.sy !== SIZE_Y || payload.sz !== SIZE_Z) return false;
+    var packed = base64ToBytes(payload.data);
+    var decoded = unpackRunsToWorld(packed);
+    if(decoded.length !== world.length) return false;
+    world.set(decoded);
+    if(payload.player){
+      player.x = payload.player.x;
+      player.y = payload.player.y;
+      player.z = payload.player.z;
+      player.yaw = payload.player.yaw || 0;
+      player.pitch = payload.player.pitch || 0;
+    }
+    return true;
+  }catch(err){
+    console.warn('No existing save, or it failed to load:', err);
+    return false;
+  }
+}
+
+/* ------------------------------------------------------------------
+   4. DOM references
+------------------------------------------------------------------- */
+var overlayEl = document.getElementById('overlay');
+var crosshairEl = document.getElementById('crosshair');
+var hudEl = document.getElementById('hud');
+var toastEl = document.getElementById('toast');
+var loadingEl = document.getElementById('loading');
+var playBtn = document.getElementById('play-btn');
+var resetBtn = document.getElementById('reset-btn');
+var containerEl = document.getElementById('game-container');
+var panelEl = document.querySelector('.panel-body');
+
+if(window.matchMedia && !window.matchMedia('(pointer: fine)').matches){
+  var warn = document.createElement('p');
+  warn.className = 'warn-note';
+  warn.textContent = 'This runs best with a mouse and keyboard on a desktop browser.';
+  panelEl.insertBefore(warn, playBtn);
+}
+
+/* ------------------------------------------------------------------
+   5. Three.js scene setup
+------------------------------------------------------------------- */
+var scene = new THREE.Scene();
+scene.background = new THREE.Color(0x7ec1e0);
+
+var camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.05, 800);
+
+var renderer = new THREE.WebGLRenderer({antialias: true});
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+renderer.domElement.id = 'game-canvas';
+containerEl.insertBefore(renderer.domElement, containerEl.firstChild);
+var canvas = renderer.domElement;
+
+scene.add(new THREE.AmbientLight(0xffffff, 0.55));
+var sun = new THREE.DirectionalLight(0xffffff, 0.65);
+sun.position.set(0.6, 1, 0.4);
+scene.add(sun);
+
+/* ------------------------------------------------------------------
+   6. Original procedural textures (not Mojang's assets)
+------------------------------------------------------------------- */
+function makeCanvas(size){
+  var c = document.createElement('canvas');
+  c.width = size; c.height = size;
+  return c;
+}
+function paintNoise(ctx, size, shades){
+  for(var y = 0; y < size; y++){
+    for(var x = 0; x < size; x++){
+      ctx.fillStyle = shades[(Math.random() * shades.length) | 0];
+      ctx.fillRect(x, y, 1, 1);
+    }
+  }
+}
+function buildGrassTopCanvas(){
+  var c = makeCanvas(16), ctx = c.getContext('2d');
+  paintNoise(ctx, 16, ['#4c7a31', '#557f37', '#5e8c3d', '#436c28', '#67943f']);
+  return c;
+}
+function buildEarthCanvas(){
+  var c = makeCanvas(16), ctx = c.getContext('2d');
+  paintNoise(ctx, 16, ['#6b4a30', '#755236', '#5f4029', '#7a5738', '#684a31']);
+  return c;
+}
+function buildCobbleCanvas(){
+  var c = makeCanvas(16), ctx = c.getContext('2d');
+  paintNoise(ctx, 16, ['#8a8a8a', '#7d7d7d', '#959595', '#707070', '#a0a0a0']);
+  ctx.fillStyle = '#585858';
+  var x, y;
+  for(y = 0; y < 16; y += 4) for(x = 0; x < 16; x++){ if(Math.random() < 0.35) ctx.fillRect(x, y, 1, 1); }
+  for(x = 0; x < 16; x += 4) for(y = 0; y < 16; y++){ if(Math.random() < 0.35) ctx.fillRect(x, y, 1, 1); }
+  return c;
+}
+function makeTexture(cv){
+  var tex = new THREE.CanvasTexture(cv);
+  tex.magFilter = THREE.NearestFilter;
+  tex.minFilter = THREE.NearestFilter;
+  tex.generateMipmaps = false;
+  return tex;
+}
+
+var materials = {
+  grassTop: new THREE.MeshLambertMaterial({map: makeTexture(buildGrassTopCanvas())}),
+  earth:    new THREE.MeshLambertMaterial({map: makeTexture(buildEarthCanvas())}),
+  cobble:   new THREE.MeshLambertMaterial({map: makeTexture(buildCobbleCanvas())})
+};
+
+var geometries = {};
+var meshes = {};
+for(var gi = 0; gi < GROUP_NAMES.length; gi++){
+  var gname = GROUP_NAMES[gi];
+  geometries[gname] = new THREE.BufferGeometry();
+  meshes[gname] = new THREE.Mesh(geometries[gname], materials[gname]);
+  scene.add(meshes[gname]);
+}
+
+var faceMaps = {grassTop: new Map(), earth: new Map(), cobble: new Map()};
+var dirtyGroups = new Set();
+
+/* ------------------------------------------------------------------
+   7. Face tracking: only exposed faces (touching air / world edge)
+   are ever meshed, matching the spec's "only visible faces" rule.
+------------------------------------------------------------------- */
+function buildInitialFaces(){
+  faceMaps.grassTop.clear();
+  faceMaps.earth.clear();
+  faceMaps.cobble.clear();
+  for(var y = 0; y < SIZE_Y; y++){
+    var yBase = y * LAYER;
+    for(var z = 0; z < SIZE_Z; z++){
+      var zBase = yBase + z * SIZE_X;
+      for(var x = 0; x < SIZE_X; x++){
+        var type = world[zBase + x];
+        if(type === AIR) continue;
+        for(var di = 0; di < 6; di++){
+          var d = DIRS[di];
+          if(getBlock(x + d.dx, y + d.dy, z + d.dz) !== AIR) continue;
+          var tex = textureFor(type, d.name);
+          var key = x + ',' + y + ',' + z + ',' + d.name;
+          faceMaps[tex].set(key, {x: x, y: y, z: z, dir: d.name});
+        }
+      }
+    }
+  }
+}
+
+function refreshBlockFaces(x, y, z){
+  var type = getBlock(x, y, z);
+  for(var di = 0; di < 6; di++){
+    var d = DIRS[di];
+    var key = x + ',' + y + ',' + z + ',' + d.name;
+    for(var gj = 0; gj < GROUP_NAMES.length; gj++){
+      var g = GROUP_NAMES[gj];
+      if(faceMaps[g].delete(key)) dirtyGroups.add(g);
+    }
+    if(type === AIR) continue;
+    if(getBlock(x + d.dx, y + d.dy, z + d.dz) !== AIR) continue;
+    var tex = textureFor(type, d.name);
+    faceMaps[tex].set(key, {x: x, y: y, z: z, dir: d.name});
+    dirtyGroups.add(tex);
+  }
+}
+
+function onBlockChanged(x, y, z){
+  refreshBlockFaces(x, y, z);
+  for(var di = 0; di < 6; di++){
+    var d = DIRS[di];
+    refreshBlockFaces(x + d.dx, y + d.dy, z + d.dz);
+  }
+}
+
+function rebuildGeometry(name){
+  var map = faceMaps[name];
+  var count = map.size;
+  var positions = new Float32Array(count * 12);
+  var normals = new Float32Array(count * 12);
+  var uvs = new Float32Array(count * 8);
+  var indices = new Uint32Array(count * 6);
+  var fi = 0;
+  map.forEach(function(face){
+    var fd = FACE_DATA[face.dir];
+    var base = fi * 4;
+    for(var c = 0; c < 4; c++){
+      var corner = fd.corners[c];
+      var pBase = (base + c) * 3;
+      positions[pBase]     = face.x + corner[0];
+      positions[pBase + 1] = face.y + corner[1];
+      positions[pBase + 2] = face.z + corner[2];
+      normals[pBase]     = fd.normal[0];
+      normals[pBase + 1] = fd.normal[1];
+      normals[pBase + 2] = fd.normal[2];
+      var uBase = (base + c) * 2;
+      uvs[uBase]     = FACE_UVS[c][0];
+      uvs[uBase + 1] = FACE_UVS[c][1];
+    }
+    var iBase = fi * 6;
+    indices[iBase]     = base;
+    indices[iBase + 1] = base + 1;
+    indices[iBase + 2] = base + 2;
+    indices[iBase + 3] = base;
+    indices[iBase + 4] = base + 2;
+    indices[iBase + 5] = base + 3;
+    fi++;
+  });
+  var geo = geometries[name];
+  geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+  geo.setAttribute('normal', new THREE.BufferAttribute(normals, 3));
+  geo.setAttribute('uv', new THREE.BufferAttribute(uvs, 2));
+  geo.setIndex(new THREE.BufferAttribute(indices, 1));
+  geo.computeBoundingSphere();
+}
+
+function flushDirty(){
+  dirtyGroups.forEach(function(g){ rebuildGeometry(g); });
+  dirtyGroups.clear();
+}
+
+/* ------------------------------------------------------------------
+   8. White flashing target overlay
+------------------------------------------------------------------- */
+var overlayMat = new THREE.MeshBasicMaterial({
+  color: 0xffffff, transparent: true, opacity: 0.5,
+  depthWrite: false, side: THREE.DoubleSide,
+  polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -4
+});
+var overlayMesh = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), overlayMat);
+overlayMesh.visible = false;
+overlayMesh.renderOrder = 1;
+scene.add(overlayMesh);
+
+function updateOverlay(time){
+  if(currentTarget){
+    var t = OVERLAY_TRANSFORM[currentTarget.face];
+    var n = FACE_DATA[currentTarget.face].normal;
+    var eps = 0.003;
+    overlayMesh.position.set(
+      currentTarget.x + t.off[0] + n[0] * eps,
+      currentTarget.y + t.off[1] + n[1] * eps,
+      currentTarget.z + t.off[2] + n[2] * eps
+    );
+    overlayMesh.rotation.set(t.rot[0], t.rot[1], t.rot[2]);
+    overlayMesh.visible = true;
+    overlayMat.opacity = 0.35 + 0.35 * Math.sin(time * 6.0);
+  } else {
+    overlayMesh.visible = false;
+  }
+}
+
+/* ------------------------------------------------------------------
+   9. Voxel raycast (Amanatides & Woo style grid traversal)
+------------------------------------------------------------------- */
+function raycast(originVec, dirVec, maxDist){
+  var x = Math.floor(originVec.x), y = Math.floor(originVec.y), z = Math.floor(originVec.z);
+  var dx = dirVec.x, dy = dirVec.y, dz = dirVec.z;
+  var stepX = dx > 0 ? 1 : (dx < 0 ? -1 : 0);
+  var stepY = dy > 0 ? 1 : (dy < 0 ? -1 : 0);
+  var stepZ = dz > 0 ? 1 : (dz < 0 ? -1 : 0);
+  var tDeltaX = dx !== 0 ? Math.abs(1 / dx) : Infinity;
+  var tDeltaY = dy !== 0 ? Math.abs(1 / dy) : Infinity;
+  var tDeltaZ = dz !== 0 ? Math.abs(1 / dz) : Infinity;
+
+  function initTMax(pos, step, tDelta){
+    if(step === 0) return Infinity;
+    var cell = Math.floor(pos);
+    return step > 0 ? (cell + 1 - pos) * tDelta : (pos - cell) * tDelta;
+  }
+
+  var tMaxX = initTMax(originVec.x, stepX, tDeltaX);
+  var tMaxY = initTMax(originVec.y, stepY, tDeltaY);
+  var tMaxZ = initTMax(originVec.z, stepZ, tDeltaZ);
+
+  var face = null;
+  var px = x, py = y, pz = z;
+  var dist = 0;
+  var guard = 0;
+  while(dist <= maxDist && guard < 512){
+    guard++;
+    var block = getBlock(x, y, z);
+    if(block !== AIR){
+      return {x: x, y: y, z: z, type: block, face: face, place: {x: px, y: py, z: pz}};
+    }
+    px = x; py = y; pz = z;
+    if(tMaxX < tMaxY && tMaxX < tMaxZ){
+      x += stepX; dist = tMaxX; tMaxX += tDeltaX; face = stepX > 0 ? 'west' : 'east';
+    } else if(tMaxY < tMaxZ){
+      y += stepY; dist = tMaxY; tMaxY += tDeltaY; face = stepY > 0 ? 'down' : 'up';
+    } else {
+      z += stepZ; dist = tMaxZ; tMaxZ += tDeltaZ; face = stepZ > 0 ? 'north' : 'south';
+    }
+  }
+  return null;
+}
+
+var REACH_DISTANCE = 6;
+var _rayDir = new THREE.Vector3();
+var currentTarget = null;
+function updateRaycastTarget(){
+  camera.getWorldDirection(_rayDir);
+  currentTarget = raycast(camera.position, _rayDir, REACH_DISTANCE);
+}
+
+/* ------------------------------------------------------------------
+   10. Player: position/velocity/yaw/pitch + physics + collision
+------------------------------------------------------------------- */
+var player = {x: 128.5, y: 44, z: 128.5, yVelocity: 0, yaw: 0, pitch: 0, onGround: false};
+
+var PLAYER_HALF_WIDTH = 0.3, PLAYER_HEIGHT = 1.8, EYE_HEIGHT = 1.6;
+var WALK_SPEED = 4.3, GRAVITY = 28, JUMP_SPEED = 8.4, TERMINAL_VELOCITY = -50;
+
+function aabbBlocked(px, py, pz){
+  var minX = Math.floor(px - PLAYER_HALF_WIDTH), maxX = Math.floor(px + PLAYER_HALF_WIDTH);
+  var minY = Math.floor(py), maxY = Math.floor(py + PLAYER_HEIGHT - 0.001);
+  var minZ = Math.floor(pz - PLAYER_HALF_WIDTH), maxZ = Math.floor(pz + PLAYER_HALF_WIDTH);
+  for(var bx = minX; bx <= maxX; bx++)
+    for(var by = minY; by <= maxY; by++)
+      for(var bz = minZ; bz <= maxZ; bz++)
+        if(getBlock(bx, by, bz) !== AIR) return true;
+  return false;
+}
+
+function updatePlayer(dt){
+  player.yVelocity -= GRAVITY * dt;
+  if(player.yVelocity < TERMINAL_VELOCITY) player.yVelocity = TERMINAL_VELOCITY;
+
+  var f = 0, r = 0;
+  if(keys['KeyW']) f += 1;
+  if(keys['KeyS']) f -= 1;
+  if(keys['KeyD']) r += 1;
+  if(keys['KeyA']) r -= 1;
+  var len = Math.hypot(f, r);
+  if(len > 0){ f /= len; r /= len; }
+
+  var fx = -Math.sin(player.yaw), fz = -Math.cos(player.yaw);
+  var rx = Math.cos(player.yaw), rz = -Math.sin(player.yaw);
+  var mdx = (fx * f + rx * r) * WALK_SPEED * dt;
+  var mdz = (fz * f + rz * r) * WALK_SPEED * dt;
+  var mdy = player.yVelocity * dt;
+
+  if(!aabbBlocked(player.x + mdx, player.y, player.z)) player.x += mdx;
+  if(!aabbBlocked(player.x, player.y, player.z + mdz)) player.z += mdz;
+  if(!aabbBlocked(player.x, player.y + mdy, player.z)){
+    player.y += mdy;
+    player.onGround = false;
+  } else {
+    if(mdy < 0) player.onGround = true;
+    player.yVelocity = 0;
+  }
+
+  if(keys['Space'] && player.onGround){
+    player.yVelocity = JUMP_SPEED;
+    player.onGround = false;
+  }
+
+  camera.position.set(player.x, player.y + EYE_HEIGHT, player.z);
+  camera.rotation.order = 'YXZ';
+  camera.rotation.y = player.yaw;
+  camera.rotation.x = player.pitch;
+}
+
+function respawnCycle(){
+  player.x = Math.random() * SIZE_X;
+  player.z = Math.random() * SIZE_Z;
+  player.y = 50;
+  player.yVelocity = 0;
+}
+
+/* ------------------------------------------------------------------
+   11. Placing & destroying blocks (controls are reversed on purpose)
+------------------------------------------------------------------- */
+function placeBlock(){
+  if(!currentTarget) return;
+  var p = currentTarget.place;
+  if(p.x < 0 || p.x >= SIZE_X || p.z < 0 || p.z >= SIZE_Z || p.y < 0 || p.y >= SIZE_Y) return; // world border
+  if(getBlock(p.x, p.y, p.z) !== AIR) return;
+  var type = (p.y === GRASS_LEVEL) ? GRASS : COBBLESTONE; // type comes from height, not inventory
+  world[idx(p.x, p.y, p.z)] = type;
+  onBlockChanged(p.x, p.y, p.z);
+  flushDirty();
+}
+
+function destroyBlock(){
+  if(!currentTarget) return;
+  var t = currentTarget;
+  if(getBlock(t.x, t.y, t.z) === AIR) return;
+  world[idx(t.x, t.y, t.z)] = AIR;
+  onBlockChanged(t.x, t.y, t.z);
+  flushDirty();
+}
+
+/* ------------------------------------------------------------------
+   12. UI helpers
+------------------------------------------------------------------- */
+var toastTimer = null;
+function showToast(msg){
+  toastEl.textContent = msg;
+  toastEl.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(function(){ toastEl.classList.remove('show'); }, 1600);
+}
+function showLoading(msg){
+  loadingEl.textContent = msg;
+  loadingEl.style.display = 'flex';
+}
+function hideLoading(){
+  loadingEl.style.display = 'none';
+}
+function blockName(t){
+  if(t === GRASS) return 'grass';
+  if(t === COBBLESTONE) return 'cobblestone';
+  return 'air';
+}
+function updateHUD(){
+  var text = 'x ' + player.x.toFixed(1) + '  y ' + player.y.toFixed(1) + '  z ' + player.z.toFixed(1);
+  if(currentTarget){
+    text += '\ntargeting ' + blockName(currentTarget.type) + ', ' + currentTarget.face + ' face';
+  }
+  hudEl.textContent = text;
+}
+
+/* ------------------------------------------------------------------
+   13. Input
+------------------------------------------------------------------- */
+var keys = {};
+var pointerLocked = false;
+var rHeld = false, rTimer = 0;
+var R_CYCLE_INTERVAL = 0.12;
+
+document.addEventListener('keydown', function(e){
+  keys[e.code] = true;
+  if(e.code === 'KeyR' && !rHeld){ rHeld = true; rTimer = 0; respawnCycle(); }
+  if(e.code === 'Enter' && !e.repeat){ saveGame(); }
+  if(pointerLocked && (e.code === 'Space' || e.code === 'KeyR' || e.code === 'Enter')) e.preventDefault();
+});
+document.addEventListener('keyup', function(e){
+  keys[e.code] = false;
+  if(e.code === 'KeyR') rHeld = false;
+});
+document.addEventListener('mousemove', function(e){
+  if(!pointerLocked) return;
+  player.yaw -= e.movementX * 0.0022;
+  player.pitch -= e.movementY * 0.0022;
+  var lim = Math.PI / 2 - 0.01;
+  if(player.pitch > lim) player.pitch = lim;
+  if(player.pitch < -lim) player.pitch = -lim;
+});
+canvas.addEventListener('mousedown', function(e){
+  if(!pointerLocked) return;
+  if(e.button === 0) placeBlock();       // left click places (reversed from modern MC)
+  else if(e.button === 2) destroyBlock(); // right click destroys
+});
+canvas.addEventListener('contextmenu', function(e){ e.preventDefault(); });
+
+document.addEventListener('pointerlockchange', function(){
+  pointerLocked = document.pointerLockElement === canvas;
+  overlayEl.style.display = pointerLocked ? 'none' : 'flex';
+  crosshairEl.style.display = pointerLocked ? 'block' : 'none';
+  hudEl.style.display = pointerLocked ? 'block' : 'none';
+});
+
+playBtn.addEventListener('click', function(){
+  if(canvas.requestPointerLock) canvas.requestPointerLock();
+});
+
+resetBtn.addEventListener('click', async function(){
+  resetBtn.textContent = 'resetting…';
+  if(window.storage){
+    try{ await window.storage.delete('level_dat', false); }catch(e){}
+  }
+  generateFreshWorld();
+  player.x = 128.5; player.y = 44; player.z = 128.5;
+  player.yaw = 0; player.pitch = 0; player.yVelocity = 0; player.onGround = false;
+  buildInitialFaces();
+  for(var i = 0; i < GROUP_NAMES.length; i++) rebuildGeometry(GROUP_NAMES[i]);
+  resetBtn.textContent = 'world reset';
+  setTimeout(function(){ resetBtn.textContent = 'reset world'; }, 1500);
+});
+
+window.addEventListener('resize', function(){
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+});
+
+window.addEventListener('beforeunload', function(){
+  saveGame(); // best-effort; browsers don't guarantee async work finishes here
+});
+
+/* ------------------------------------------------------------------
+   14. Main loop
+------------------------------------------------------------------- */
+var lastTime = 0;
+function animate(now){
+  requestAnimationFrame(animate);
+  var dt = (now - lastTime) / 1000;
+  if(!isFinite(dt) || dt < 0) dt = 0;
+  if(dt > 0.1) dt = 0.1;
+  lastTime = now;
+
+  if(pointerLocked){
+    if(rHeld){
+      rTimer += dt;
+      if(rTimer >= R_CYCLE_INTERVAL){ rTimer = 0; respawnCycle(); }
+    }
+    updatePlayer(dt);
+    updateRaycastTarget();
+    updateOverlay(now / 1000);
+    updateHUD();
+  } else {
+    overlayMesh.visible = false;
+  }
+  renderer.render(scene, camera);
+}
+
+/* ------------------------------------------------------------------
+   15. Boot
+------------------------------------------------------------------- */
+async function init(){
+  try{
+    showLoading('Loading world…');
+    var loaded = await tryLoadGame();
+    if(!loaded) generateFreshWorld();
+    showLoading('Building geometry…');
+    buildInitialFaces();
+    for(var i = 0; i < GROUP_NAMES.length; i++) rebuildGeometry(GROUP_NAMES[i]);
+    hideLoading();
+    lastTime = performance.now();
+    requestAnimationFrame(animate);
+  }catch(err){
+    console.error(err);
+    loadingEl.style.display = 'flex';
+    loadingEl.textContent = 'Setup failed: ' + (err && err.message ? err.message : err) + '. Reload to try again.';
+  }
+}
+init();
+</script>
+</body>
+</html>
